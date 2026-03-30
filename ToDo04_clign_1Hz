@@ -100,17 +100,17 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  HAL_GPIO_WritePin(GPIOA, LED_R_Pin, GPIO_PIN_SET);  // Allume D2 (PA10)
-	  HAL_GPIO_WritePin(GPIOA, LED_B_Pin, GPIO_PIN_SET);   // Allume D3 (PB3)
-	  HAL_GPIO_WritePin(GPIOB, LED_J_Pin, GPIO_PIN_SET);   // Allume D4 (PB5)
-	  HAL_GPIO_WritePin(GPIOB, LED_V_Pin, GPIO_PIN_SET);   // Allume D5 (PB4)
+	  HAL_GPIO_WritePin(GPIOA, LED_R_Pin, GPIO_PIN_SET);  // Allume D0 (PA_10)
+	  HAL_GPIO_WritePin(GPIOA, LED_B_Pin, GPIO_PIN_SET);   // Allume D1 (PA_9)
+	  HAL_GPIO_WritePin(GPIOB, LED_J_Pin, GPIO_PIN_SET);   // Allume D5 (PB_7)
+	  HAL_GPIO_WritePin(GPIOB, LED_V_Pin, GPIO_PIN_SET);   // Allume D6 (PB_6)
 
 	  HAL_Delay(1000); // Attend 1 seconde
 
-	  HAL_GPIO_WritePin(GPIOA, LED_R_Pin, GPIO_PIN_RESET);  // Éteint D2 (PA10)
-	  HAL_GPIO_WritePin(GPIOA, LED_B_Pin, GPIO_PIN_RESET);   // Éteint D3 (PB3)
-	  HAL_GPIO_WritePin(GPIOB, LED_J_Pin, GPIO_PIN_RESET);   // Éteint D4 (PB5)
-	  HAL_GPIO_WritePin(GPIOB, LED_V_Pin, GPIO_PIN_RESET);   // Éteint D5 (PB4)
+	  HAL_GPIO_WritePin(GPIOA, LED_R_Pin, GPIO_PIN_RESET);  // Éteint D0 (PA1_0)
+	  HAL_GPIO_WritePin(GPIOA, LED_B_Pin, GPIO_PIN_RESET);   // Éteint D1 (PA_9)
+	  HAL_GPIO_WritePin(GPIOB, LED_J_Pin, GPIO_PIN_RESET);   // Éteint D5 (PB_7)
+	  HAL_GPIO_WritePin(GPIOB, LED_V_Pin, GPIO_PIN_RESET);   // Éteint D6 (PB_6)
 
 	  HAL_Delay(1000); // Attend 1 seconde
   }
