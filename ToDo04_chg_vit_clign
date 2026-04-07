@@ -112,14 +112,14 @@ int main(void)
 
       /* USER CODE BEGIN 3 */
   	  // Détection du front montant pour BT1 (mode)
-  	  GPIO_PinState state1 = HAL_GPIO_ReadPin(GPIOB, BT1_Pin);
+  	  GPIO_PinState state1 = HAL_GPIO_ReadPin(GPIOA, BT1_Pin);//D12 (PB_4)
   	  if (state1 == GPIO_PIN_SET && previousState1 == GPIO_PIN_RESET) {
   	      pinstate1 = !pinstate1; // Bascule le mode
   	  }
   	  previousState1 = state1;
 
   	  // Détection du front montant pour BT2 (fréquence)
-  	  GPIO_PinState state2 = HAL_GPIO_ReadPin(GPIOA, BT2_Pin);
+  	  GPIO_PinState state2 = HAL_GPIO_ReadPin(GPIOB, BT2_Pin);//A6 (PA_7)
   	  if (state2 == GPIO_PIN_SET) {
   	      n = (n + 1) % 3; // Cycle entre 0, 1, 2
   	      HAL_Delay(200); // Anti-rebond logiciel
