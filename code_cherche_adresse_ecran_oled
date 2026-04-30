@@ -1,0 +1,157 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Scanner I2C pour identifier les capteurs
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+
+#include "main.h"
+#include <stdio.h>
+#include <string.h>
+
+/* --- CONFIGURATION --- */
+I2C_HandleTypeDef hi2c1;
+UART_HandleTypeDef huart2;
+
+#define OLED_ADDR (0x3C << 1)
+
+/* --- POLICE --- */
+const uint8_t font5x7[][5] = {
+    [0] = {0x00, 0x00, 0x00, 0x00, 0x00},
+    ['0'-32]={0x3E,0x51,0x49,0x45,0x3E}, ['1'-32]={0x00,0x42,0x7F,0x40,0x00},
+    ['2'-32]={0x42,0x61,0x51,0x49,0x46}, ['3'-32]={0x21,0x41,0x45,0x4B,0x31},
+    ['4'-32]={0x18,0x14,0x12,0x7F,0x10}, ['5'-32]={0x27,0x45,0x45,0x45,0x39},
+    ['6'-32]={0x3C,0x4A,0x49,0x49,0x30}, ['7'-32]={0x01,0x71,0x09,0x05,0x03},
+    ['8'-32]={0x36,0x49,0x49,0x49,0x36}, ['9'-32]={0x06,0x49,0x49,0x29,0x1E},
+    ['A'-32]={0x7C,0x12,0x11,0x12,0x7C}, ['B'-32]={0x7F,0x49,0x49,0x49,0x36},
+    ['C'-32]={0x3E,0x41,0x41,0x41,0x22}, ['D'-32]={0x7F,0x41,0x41,0x22,0x1C},
+    ['E'-32]={0x7F,0x49,0x49,0x49,0x41}, ['F'-32]={0x7F,0x09,0x09,0x09,0x01},
+    ['X'-32]={0x63,0x14,0x08,0x14,0x63}, [':'-32]={0x00,0x36,0x36,0x00,0x00},
+    [' '-32]={0x00,0x00,0x00,0x00,0x00}
+};
+
+/* --- PROTOTYPES --- */
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_I2C1_Init(void);
+void OLED_Init(void);
+void OLED_Clear(void);
+void OLED_SetCursor(uint8_t x, uint8_t page);
+void OLED_WriteStr(char* str);
+
+/**
+  * @brief  Main
+  */
+int main(void)
+{
+  HAL_Init();
+  SystemClock_Config();
+  MX_GPIO_Init();
+  MX_I2C1_Init();
+
+  HAL_Delay(500);
+  OLED_Init();
+  OLED_Clear();
+
+  OLED_SetCursor(0, 0);
+  OLED_WriteStr("I2C SCANNER...");
+  HAL_Delay(1000);
+
+  int y = 2; // Ligne d'affichage sur l'OLED
+  char buffer[20];
+
+  for(uint16_t i = 1; i < 128; i++) {
+      // On teste si un composant répond à l'adresse i
+      if (HAL_I2C_IsDeviceReady(&hi2c1, (uint16_t)(i << 1), 3, 5) == HAL_OK) {
+          sprintf(buffer, "FOUND: 0X%02X", i);
+          OLED_SetCursor(0, y);
+          OLED_WriteStr(buffer);
+          y += 2; // Descendre d'une ligne pour le prochain trouvé
+          if(y > 6) break; // Éviter de sortir de l'écran
+      }
+      HAL_Delay(5);
+  }
+
+  if (y == 2) {
+      OLED_SetCursor(0, 2);
+      OLED_WriteStr("NO DEVICES!");
+  }
+
+  while (1) {
+      HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_3);
+      HAL_Delay(1000);
+  }
+}
+
+/* --- DRIVERS OLED (Fonctionnels) --- */
+
+void OLED_SendCmd(uint8_t cmd) {
+    HAL_I2C_Mem_Write(&hi2c1, OLED_ADDR, 0x00, 1, &cmd, 1, 10);
+}
+
+void OLED_Init(void) {
+    uint8_t init[] = { 0xAE, 0x20, 0x00, 0xB0, 0xC8, 0x00, 0x10, 0x40, 0x81, 0x7F, 0xA1, 0xA6, 0xA8, 0x3F, 0xA4, 0xD3, 0x00, 0xD5, 0xF0, 0xD9, 0x22, 0xDA, 0x12, 0xDB, 0x20, 0x8D, 0x14, 0xAF };
+    for(int i=0; i<sizeof(init); i++) OLED_SendCmd(init[i]);
+}
+
+void OLED_Clear(void) {
+    uint8_t zero[128] = {0};
+    for(uint8_t i=0; i<8; i++) {
+        OLED_SetCursor(0, i);
+        HAL_I2C_Mem_Write(&hi2c1, OLED_ADDR, 0x40, 1, zero, 128, 100);
+    }
+}
+
+void OLED_SetCursor(uint8_t x, uint8_t page) {
+    OLED_SendCmd(0xB0 + page);
+    OLED_SendCmd(0x00 + (x & 0x0F));
+    OLED_SendCmd(0x10 + ((x >> 4) & 0x0F));
+}
+
+void OLED_WriteStr(char* str) {
+    while(*str) {
+        char c = *str++;
+        uint8_t data[6] = {0};
+        if(c >= 32 && c <= 126) memcpy(data, font5x7[c-32], 5);
+        HAL_I2C_Mem_Write(&hi2c1, OLED_ADDR, 0x40, 1, data, 6, 10);
+    }
+}
+
+/* --- CONFIGURATION SYSTÈME --- */
+
+void SystemClock_Config(void) {
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1);
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_MSI;
+  RCC_OscInitStruct.MSIState = RCC_MSI_ON;
+  RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_6;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_MSI;
+  RCC_OscInitStruct.PLL.PLLM = 1;
+  RCC_OscInitStruct.PLL.PLLN = 16;
+  RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
+  HAL_RCC_OscConfig(&RCC_OscInitStruct);
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK|RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1);
+}
+
+static void MX_I2C1_Init(void) {
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.Timing = 0x00B07CB4;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  HAL_I2C_Init(&hi2c1);
+}
+
+static void MX_GPIO_Init(void) {
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  GPIO_InitStruct.Pin = GPIO_PIN_3;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+}
+
+void Error_Handler(void) { while(1); }
