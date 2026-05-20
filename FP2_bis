@@ -25,7 +25,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#ifndef M_PI
+#define M_PI 3.14159265358979f
+#endif
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -106,6 +108,8 @@ const uint8_t font5x7[][5] = {
     ['T'-32]={0x01,0x01,0x7F,0x01,0x01},
     ['U'-32]={0x3F,0x40,0x40,0x40,0x3F},
     ['V'-32]={0x1F,0x20,0x40,0x20,0x1F},
+	['X'-32]={0x63,0x14,0x08,0x14,0x63},
+	['Y'-32]={0x07,0x08,0x70,0x08,0x07},
 };
 
 /* ===== OLED SSD1306 ===== */
@@ -330,17 +334,21 @@ int main(void)
     sprintf(msg, "PRES: %.1fHPA ", press);
     OLED_WriteStr(msg);
 
+    // Conversion Roll/Pitch → X, Y
+    float x = sinf(pitch * (M_PI / 180.0f));
+    float y = sinf(roll  * (M_PI / 180.0f)) * cosf(pitch * (M_PI / 180.0f));
+
     OLED_SetCursor(0, 4);
-    sprintf(msg, "ROLL: %.1f    ", roll);
+    sprintf(msg, "X: %.1f    ", x);
     OLED_WriteStr(msg);
 
     OLED_SetCursor(0, 6);
-    sprintf(msg, "PITCH:%.1f    ", pitch);
+    sprintf(msg, "Y:%.1f    ", y);
     OLED_WriteStr(msg);
 
     /* UART terminal */
     sprintf(msg, "T=%.1f P=%.1f R=%.1f Pi=%.1f Y=%.1f\r\n",
-            temp, press, roll, pitch, yaw);
+            temp, press, x, y, yaw);
     HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 
     HAL_GPIO_TogglePin(GPIOB, LD3_Pin);
