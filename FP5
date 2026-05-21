@@ -62,8 +62,8 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_SPI1_Init(void);
-static void MX_I2C1_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 void OLED_Init(void);
 void OLED_Clear(void);
@@ -255,6 +255,7 @@ void ICM20948_Read(void) {
 
     /* Lacet par intégration gyroscope */
     static uint32_t last_tick = 0;
+    if (last_tick == 0) last_tick = HAL_GetTick();
     uint32_t now = HAL_GetTick();
     float dt = (now - last_tick) / 1000.0f;
     last_tick = now;
@@ -293,9 +294,9 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_SPI1_Init();
-  MX_I2C1_Init();
   MX_FATFS_Init();
   MX_TIM2_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
   HAL_Delay(200);
   OLED_Init();
@@ -346,69 +347,63 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* USER CODE END WHILE */
+      /* 1. Lecture des capteurs */
+      BMP280_Read();
+      ICM20948_Read(); // Calcule roll, pitch et yaw en degrés
 
-    /* USER CODE BEGIN 3 */
-    BMP280_Read();
-    ICM20948_Read();
+      /* 2. Validation FP5 : Surveillance des limites (-40° à +40°) */
+      // On éteint les 4 LEDs avant vérification
+      GPIOB->ODR &= ~((1 << 6) | (1 << 5) | (1 << 4) | (1 << 1));
 
-    /* OLED */
-    OLED_SetCursor(0, 0);
-    sprintf(msg, "TEMP: %.1fC   ", temp);
-    OLED_WriteStr(msg);
+      if (roll  >  40.0f) GPIOB->ODR |= (1 << 6);  // Roulis trop à droite
+      if (roll  < -40.0f) GPIOB->ODR |= (1 << 5);  // Roulis trop à gauche
+      if (pitch >  40.0f) GPIOB->ODR |= (1 << 4);  // Tangage trop en avant
+      if (pitch < -40.0f) GPIOB->ODR |= (1 << 1);  // Tangage trop en arrière
 
-    OLED_SetCursor(0, 2);
-    sprintf(msg, "PRES: %.1fHPA ", press);
-    OLED_WriteStr(msg);
+      /* 3. Validation FP4 : Commande du servomoteur de lacet (Yaw) */
+      float yaw_clamped = yaw;
+      if (yaw_clamped >  45.0f) yaw_clamped =  45.0f;
+      if (yaw_clamped < -45.0f) yaw_clamped = -45.0f;
 
-    // Conversion Roll/Pitch → X, Y
-    float x = sinf(pitch * (M_PI / 180.0f));
-    float y = sinf(roll  * (M_PI / 180.0f)) * cosf(pitch * (M_PI / 180.0f));
+      // Conversion de l'angle (-45°/+45°) en largeur d'impulsion (1000µs à 2000µs)
+      uint32_t pulse_us = (uint32_t)(1500.0f + (yaw_clamped / 45.0f) * 500.0f);
+      __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, pulse_us);
 
-    float yaw_clamped = yaw;
-    if (yaw_clamped >  45.0f) yaw_clamped =  45.0f;
-    if (yaw_clamped < -45.0f) yaw_clamped = -45.0f;
+      /* 4. Validation FP1 : Affichage OLED (Angles en DEGRÉS) */
+      OLED_SetCursor(0, 0);
+      sprintf(msg, "TEMP: %.1fC   ", temp);
+      OLED_WriteStr(msg);
 
-    GPIOB->ODR &= ~((1 << 6) | (1 << 5) | (1 << 4) | (1 << 1));
-    if (roll  >  40.0f) GPIOB->ODR |= (1 << 6);  // roll trop à droite
-    if (roll  < -40.0f) GPIOB->ODR |= (1 << 5);  // roll trop à gauche
-    if (pitch >  40.0f) GPIOB->ODR |= (1 << 4);  // pitch trop en avant
-    if (pitch < -40.0f) GPIOB->ODR |= (1 << 1);  // pitch trop en arrière
+      OLED_SetCursor(0, 2);
+      sprintf(msg, "PRES: %.1fHPA ", press);
+      OLED_WriteStr(msg);
 
-    HAL_Delay(200);
+      OLED_SetCursor(0, 4);
+      sprintf(msg, "ROLL: %.1f DEG ", roll);  // <-- Remplacé 'x' par 'roll'
+      OLED_WriteStr(msg);
 
-    uint32_t pulse_us = (uint32_t)(1500.0f + (yaw_clamped / 45.0f) * 500.0f);
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, pulse_us);
+      OLED_SetCursor(0, 6);
+      sprintf(msg, "PTCH: %.1f DEG ", pitch); // <-- Remplacé 'y' par 'pitch'
+      OLED_WriteStr(msg);
 
-    sprintf(msg, "YAW=%.1f PULSE=%lu\r\n", yaw, pulse_us);
-    HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+      /* 5. Validation FP1 : Terminal Série (Angles en DEGRÉS) */
+      sprintf(msg, "T=%.1f C, P=%.1f hPa, R=%.1f, Pi=%.1f, Y=%.1f\r\n",
+              temp, press, roll, pitch, yaw);
+      HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 
-    OLED_SetCursor(0, 4);
-    sprintf(msg, "X: %.1f    ", x);
-    OLED_WriteStr(msg);
+      /* 6. Validation FP2 : Enregistrement SD */
+      if (fres == FR_OK) {
+          char line[64];
+          sprintf(line, "%.1f,%.1f,%.1f,%.1f,%.1f\n",
+                  temp, press, roll, pitch, yaw);
+          f_puts(line, &fil);
+          f_sync(&fil);
+      }
 
-    OLED_SetCursor(0, 6);
-    sprintf(msg, "Y:%.1f    ", y);
-    OLED_WriteStr(msg);
+      /* 7. Gestion de la LED témoin et cadence à 5 Hz (200ms au total) */
+      HAL_GPIO_TogglePin(GPIOB, LD3_Pin);
 
-    /* UART terminal */
-    sprintf(msg, "T=%.1f P=%.1f R=%.1f Pi=%.1f Y=%.1f\r\n",
-            temp, press, x, y, yaw);
-    HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
-
-    HAL_GPIO_TogglePin(GPIOB, LD3_Pin);
-    HAL_Delay(200); /* 5 Hz */
-
-    /* Enregistrement SD */
-
-    if (fres == FR_OK) {
-        char line[64];
-        sprintf(line, "%.1f,%.1f,%.1f,%.1f,%.1f\n",
-                temp, press, roll, pitch, yaw);
-        f_puts(line, &fil);
-        f_sync(&fil);
-    }
-    HAL_Delay(200);
+      HAL_Delay(200); /* Un unique delay de 200ms assure la cadence à ~5 Hz */
   }
   /* USER CODE END 3 */
 }
@@ -574,9 +569,9 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 79;
+  htim2.Init.Prescaler = 31;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 4294967295;
+  htim2.Init.Period = 19999;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
@@ -590,7 +585,7 @@ static void MX_TIM2_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 19999;
+  sConfigOC.Pulse = 4294967295;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
