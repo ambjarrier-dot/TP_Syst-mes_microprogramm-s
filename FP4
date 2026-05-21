@@ -40,6 +40,8 @@ I2C_HandleTypeDef hi2c1;
 
 SPI_HandleTypeDef hspi1;
 
+TIM_HandleTypeDef htim2;
+
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
@@ -61,6 +63,7 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 void OLED_Init(void);
 void OLED_Clear(void);
@@ -255,7 +258,9 @@ void ICM20948_Read(void) {
     uint32_t now = HAL_GetTick();
     float dt = (now - last_tick) / 1000.0f;
     last_tick = now;
-    yaw += ((float)gz / 131.0f) * dt; // 131 LSB/°/s pour ±250°/s
+    float gz_dps = (float)gz / 131.0f;
+    if (fabsf(gz_dps) < 1.0f) gz_dps = 0.0f;
+    yaw += gz_dps * dt;
 }
 
 /* USER CODE END 0 */
@@ -290,12 +295,15 @@ int main(void)
   MX_SPI1_Init();
   MX_I2C1_Init();
   MX_FATFS_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   HAL_Delay(200);
   OLED_Init();
   OLED_Clear();
   BMP280_Init();
   ICM20948_Init();
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+  __HAL_TIM_MOE_ENABLE(&htim2);
 
   OLED_SetCursor(0, 0);
   OLED_WriteStr("INIT OK");
@@ -313,6 +321,20 @@ int main(void)
   if (fres == FR_OK) {
       f_printf(&fil, "TEMP,PRESS,ROLL,PITCH,YAW\n");
   }
+
+
+  // Test fixe : force le servo au centre
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 1500);
+  HAL_Delay(1000);
+  // Puis position extrême gauche
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 1000);
+  HAL_Delay(1000);
+  // Puis position extrême droite
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 2000);
+  HAL_Delay(1000);
+
+  ICM20948_Read();
+  yaw = 0.0f;
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -337,6 +359,16 @@ int main(void)
     // Conversion Roll/Pitch → X, Y
     float x = sinf(pitch * (M_PI / 180.0f));
     float y = sinf(roll  * (M_PI / 180.0f)) * cosf(pitch * (M_PI / 180.0f));
+
+    float yaw_clamped = yaw;
+    if (yaw_clamped >  45.0f) yaw_clamped =  45.0f;
+    if (yaw_clamped < -45.0f) yaw_clamped = -45.0f;
+
+    uint32_t pulse_us = (uint32_t)(1500.0f + (yaw_clamped / 45.0f) * 500.0f);
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, pulse_us);
+
+    sprintf(msg, "YAW=%.1f PULSE=%lu\r\n", yaw, pulse_us);
+    HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 
     OLED_SetCursor(0, 4);
     sprintf(msg, "X: %.1f    ", x);
@@ -507,6 +539,55 @@ static void MX_SPI1_Init(void)
   }
   /* USER CODE BEGIN SPI1_Init 2 */
   /* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 79;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 4294967295;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 19999;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+  HAL_TIM_MspPostInit(&htim2);
 
 }
 
