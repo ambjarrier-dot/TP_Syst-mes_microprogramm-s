@@ -335,6 +335,11 @@ int main(void)
 
   ICM20948_Read();
   yaw = 0.0f;
+
+  RCC->AHB2ENR |= (1 << 1);
+  GPIOB->MODER &= ~((0x3 << 2) | (0x3 << 8) | (0x3 << 10) | (0x3 << 12));
+  GPIOB->MODER |=  ((0x1 << 2) | (0x1 << 8) | (0x1 << 10) | (0x1 << 12));
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -363,6 +368,14 @@ int main(void)
     float yaw_clamped = yaw;
     if (yaw_clamped >  45.0f) yaw_clamped =  45.0f;
     if (yaw_clamped < -45.0f) yaw_clamped = -45.0f;
+
+    GPIOB->ODR &= ~((1 << 6) | (1 << 5) | (1 << 4) | (1 << 1));
+    if (roll  >  40.0f) GPIOB->ODR |= (1 << 6);  // roll trop à droite
+    if (roll  < -40.0f) GPIOB->ODR |= (1 << 5);  // roll trop à gauche
+    if (pitch >  40.0f) GPIOB->ODR |= (1 << 4);  // pitch trop en avant
+    if (pitch < -40.0f) GPIOB->ODR |= (1 << 1);  // pitch trop en arrière
+
+    HAL_Delay(200);
 
     uint32_t pulse_us = (uint32_t)(1500.0f + (yaw_clamped / 45.0f) * 500.0f);
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, pulse_us);
